@@ -110,5 +110,3 @@ python train.py --bsize 8 --epochs 200 --mode supervised
 - Add a small dataset example (few images) under a `data/sample/` folder and a quick-start script to train for 1 epoch for CI/local tests.
 - Add `pytest` unit tests for dataset loader and metric functions.
 
----
-If anything in this README is unclear or you'd like me to include a short example `train` command with specific args (for example exact SSL or supervised settings you used), tell me which mode & dataset you used and I'll add it.
