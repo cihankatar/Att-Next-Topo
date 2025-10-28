@@ -1,0 +1,15 @@
+torch
+torchvision
+timm
+wandb
+tqdm
+numpy
+matplotlib
+scikit-learn
+Pillow
+opencv-python
+gudhi
+torch_topological
+scipy
+pytest
+# Note: Install torch with the correct CUDA support per https://pytorch.org/get-started/locally
