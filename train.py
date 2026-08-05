@@ -113,6 +113,7 @@ def main():
     data, training_mode, op, addtopoloss = 'isic_2018_1', "supervised", "train", True
     segmentation_loss_name = "BCE"  # Choose "BCE" or "Dice_BCE".
     topo_lambda = 0.1
+    topology_image_size = 32  # 256 -> 128 -> 64 -> 32 (three AvgPool steps)
     visualization_interval = 50
 
     segmentation_losses = {
@@ -136,6 +137,7 @@ def main():
         os.environ["WANDB_API_KEY"], os.environ["WANDB_DIR"], args, data,
         loss_name=segmentation_loss_name,
         topo_lambda=topo_lambda if addtopoloss else None,
+        topology_image_size=topology_image_size if addtopoloss else None,
     )
 
     # Data Loaders
@@ -149,7 +151,10 @@ def main():
 
     model       = ATTNext(args.mode).to(device)
 
-    topology_name = f"TopoLoss-lam{topo_lambda:g}" if addtopoloss else "NoTopoLoss"
+    topology_name = (
+        f"TopoLoss-lam{topo_lambda:g}-{topology_image_size}x{topology_image_size}"
+        if addtopoloss else "NoTopoLoss"
+    )
     checkpoint_folder_name = (
         f"{model.__class__.__name__}_{segmentation_loss_name}_{topology_name}{res}"
     )
@@ -171,7 +176,10 @@ def main():
 
     if addtopoloss:
         from utils.Loss import Topological_Loss
-        topo_loss_fn = Topological_Loss(lam=topo_lambda).to(device)
+        topo_loss_fn = Topological_Loss(
+            lam=topo_lambda,
+            topology_image_size=topology_image_size,
+        ).to(device)
 
     print(f"Training on {len(train_loader) * args.bsize} images. Saving checkpoints to {checkpoint_dir}")
     print('Train loader transform',train_loader.dataset.tr)

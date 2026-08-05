@@ -119,7 +119,8 @@ def parser_init(name, op, training_mode=None):
     else:
         return args,res
 
-def wandb_init(WANDB_API_KEY, WANDB_DIR, args, data, loss_name="BCE", topo_lambda=None):
+def wandb_init(WANDB_API_KEY, WANDB_DIR, args, data, loss_name="BCE",
+               topo_lambda=None, topology_image_size=None):
     
     op                  = args.op
     training_mode       = args.mode
@@ -142,6 +143,8 @@ def wandb_init(WANDB_API_KEY, WANDB_DIR, args, data, loss_name="BCE", topo_lambd
 
     wandb.login(key=WANDB_API_KEY)
     topo_suffix = f"-Topo{topo_lambda:g}" if topo_lambda is not None else ""
+    if topology_image_size is not None:
+        topo_suffix += f"-{topology_image_size}x{topology_image_size}"
     experiment_suffix = f"-{loss_name}{topo_suffix}"
     if op == "train": 
 
@@ -175,6 +178,7 @@ def wandb_init(WANDB_API_KEY, WANDB_DIR, args, data, loss_name="BCE", topo_lambd
             "shuffle"         : shuffle,
             "segmentation_loss": loss_name,
             "topology_lambda" : topo_lambda,
+            "topology_image_size": topology_image_size,
             })
 
     config = wandb.config

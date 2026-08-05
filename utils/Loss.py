@@ -112,14 +112,38 @@ class DINOLoss(nn.Module):
 
 class Topological_Loss(torch.nn.Module):
 
-    def __init__(self, lam=0.1):
+    def __init__(self, lam=0.1, topology_image_size=32):
         super().__init__()
         self.lam                = lam
+        self.topology_image_size = topology_image_size
         #self.vr                 = VietorisRipsComplex(dim=self.dimension)
         self.cubicalcomplex     = CubicalComplex()
         self.wloss              = WassersteinDistance(p=2)
         self.sigmoid_f          = nn.Sigmoid()
         self.avgpool            = nn.AvgPool2d(2,2)
+
+    def _downsample_to_topology_size(self, tensor):
+        """Repeatedly halve a square tensor until topology_image_size is reached."""
+        height, width = tensor.shape[-2:]
+        if height != width:
+            raise ValueError(
+                f"Topological_Loss expects square inputs, got {height}x{width}."
+            )
+        if self.topology_image_size <= 0 or self.topology_image_size > height:
+            raise ValueError(
+                f"topology_image_size must be in [1, {height}], "
+                f"got {self.topology_image_size}."
+            )
+
+        while height > self.topology_image_size:
+            if height % 2 != 0 or height // 2 < self.topology_image_size:
+                raise ValueError(
+                    f"Cannot reach {self.topology_image_size}x{self.topology_image_size} "
+                    f"from {tensor.shape[-2]}x{tensor.shape[-1]} using 2x2 AvgPool."
+                )
+            tensor = self.avgpool(tensor)
+            height, width = tensor.shape[-2:]
+        return tensor
   
     def forward(self, model_output,labels):
 
@@ -127,8 +151,8 @@ class Topological_Loss(torch.nn.Module):
         # Work on probabilities, then reduce the spatial resolution for a
         # substantially cheaper cubical-complex computation.
         model_output_r        = self.sigmoid_f(model_output)
-        model_output_r        = self.avgpool(self.avgpool(self.avgpool(model_output_r)))
-        labels_r              = self.avgpool(self.avgpool(self.avgpool(labels)))
+        model_output_r        = self._downsample_to_topology_size(model_output_r)
+        labels_r              = self._downsample_to_topology_size(labels)
         predictions           = torch.squeeze(model_output_r,dim=1) 
         masks                 = torch.squeeze(labels_r,dim=1)
         pi_pred               = self.cubicalcomplex(predictions)
