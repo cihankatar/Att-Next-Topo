@@ -171,7 +171,7 @@ class Topological_Loss_distillation(torch.nn.Module):
         super().__init__()
         self.lam                = lam
         #self.vr                 = VietorisRipsComplex(dim=self.dimension)
-        self.cubicalcomplex     = CubicalComplex()
+        self.cubicalcomplex     = CubicalComplex(superlevel=True)
         self.wloss              = WassersteinDistance(p=2)
         self.sigmoid_f          = nn.Sigmoid()
 
