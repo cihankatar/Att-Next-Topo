@@ -119,7 +119,7 @@ def parser_init(name, op, training_mode=None):
     else:
         return args,res
 
-def wandb_init (WANDB_API_KEY,WANDB_DIR,args,data):
+def wandb_init(WANDB_API_KEY, WANDB_DIR, args, data, loss_name="BCE", topo_lambda=None):
     
     op                  = args.op
     training_mode       = args.mode
@@ -141,19 +141,22 @@ def wandb_init (WANDB_API_KEY,WANDB_DIR,args,data):
     print(f'Taining Configs:\noperation:{op}\ntraining_mode:{training_mode}\nssl_mode_modelname:{ssl_mode_modelname}\nimagenetpretrained:{imnetpr} \nbatch_size:{batch_size}, \nepochs:{epochs}, \nimagesize:{image_size}, \naugmentation:{augmentation}, \nl_r:{learningrate}, \nn_classes:{n_classes}, \nshuffle:{shuffle}, \ncutout_pr:{cutout_pr}, \ncutout_box_size:{box_size},\ncutmixpr:{cutmixpr}, \nworkers:{workers},\nsplit_ratio:{split_ratio}')
 
     wandb.login(key=WANDB_API_KEY)
+    topo_suffix = f"-Topo{topo_lambda:g}" if topo_lambda is not None else ""
+    experiment_suffix = f"-{loss_name}{topo_suffix}"
     if op == "train": 
 
         if torch.cuda.is_available():
-            project_name = "Att-Next-SSL"
+            project_name = "Att-Next-SSL" + experiment_suffix
 
         else:
-            project_name = "Temp_Att-Next-SSL_local"
+            project_name = "Temp_Att-Next-SSL_local" + experiment_suffix
                 
     else:
-        project_name = data+"AAtt-Next-SSL_Test"
+        project_name = data + "AAtt-Next-SSL_Test" + experiment_suffix
 
                 
-    wandb.init(project=project_name, dir=WANDB_DIR, name=f"{args.mode}_s{args.sratio}_ep{args.epochs}",
+    wandb.init(project=project_name, dir=WANDB_DIR,
+        name=f"{args.mode}_{loss_name}{topo_suffix}_ep{args.epochs}_bs{args.bsize}",
         config={
             "operation"       : op,
             "training_mode"   : training_mode,
@@ -170,6 +173,8 @@ def wandb_init (WANDB_API_KEY,WANDB_DIR,args,data):
             "cutout_pram"     : [cutout_pr,box_size],
             "augmentation"    : augmentation,
             "shuffle"         : shuffle,
+            "segmentation_loss": loss_name,
+            "topology_lambda" : topo_lambda,
             })
 
     config = wandb.config

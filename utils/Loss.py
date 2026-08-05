@@ -124,9 +124,11 @@ class Topological_Loss(torch.nn.Module):
     def forward(self, model_output,labels):
 
         totalloss             = 0
-        model_output_r        = self.avgpool(self.avgpool(self.avgpool(model_output)))
+        # Work on probabilities, then reduce the spatial resolution for a
+        # substantially cheaper cubical-complex computation.
+        model_output_r        = self.sigmoid_f(model_output)
+        model_output_r        = self.avgpool(self.avgpool(self.avgpool(model_output_r)))
         labels_r              = self.avgpool(self.avgpool(self.avgpool(labels)))
-        model_output_r        = self.sigmoid_f(model_output_r)
         predictions           = torch.squeeze(model_output_r,dim=1) 
         masks                 = torch.squeeze(labels_r,dim=1)
         pi_pred               = self.cubicalcomplex(predictions)
@@ -137,7 +139,7 @@ class Topological_Loss(torch.nn.Module):
             topo_loss   = self.wloss(pi_mask[i],pi_pred[i])             
             totalloss   +=topo_loss
         loss             = self.lam * totalloss/predictions.shape[0]
-        return loss
+        return loss, pi_pred, pi_mask
 
 class Topological_Loss_distillation(torch.nn.Module):
 
