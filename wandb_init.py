@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import argparse
 import torch
 
-
 def parse_bool(s):
     return True if str(s)=="True" else False
 

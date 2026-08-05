@@ -35,7 +35,7 @@ def setup_paths(data):
 def main():
     # Configuration and Initial Setup
 
-    data, training_mode, op, addtopoloss = 'isic_2018_1', "supervised", "train", False
+    data, training_mode, op, addtopoloss = 'isic_2018_1', "supervised", "train", True
 
     best_valid_loss   = float("inf")
     device      = using_device()

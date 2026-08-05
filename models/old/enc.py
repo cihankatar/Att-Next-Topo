@@ -1,12 +1,8 @@
 ##IMPORT 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from timm.models.layers import trunc_normal_, DropPath
-from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-import os
 from functools import partial
-import sys
 #from transformers import ViTImageProcessor, ViTForImageClassification
 
 class LayerNormGeneral(nn.Module):
@@ -17,9 +13,9 @@ class LayerNormGeneral(nn.Module):
         self.normalized_dim = normalized_dim
         self.use_scale = scale
         self.use_bias = bias
-        self.weight = nn.Parameter(torch.ones(affine_shape)) if scale else None
-        self.bias = nn.Parameter(torch.zeros(affine_shape)) if bias else None
-        self.eps = eps
+        self.weight   = nn.Parameter(torch.ones(affine_shape)) if scale else None
+        self.bias     = nn.Parameter(torch.zeros(affine_shape)) if bias else None
+        self.eps      = eps
 
     def forward(self, x):
         c = x - x.mean(self.normalized_dim, keepdim=True)
@@ -61,9 +57,7 @@ class Mlp(nn.Module):
         return x.permute(0, 3, 1, 2)
 
 class Scale(nn.Module):
-    """
-    Scale vector by element multiplications.
-    """
+
     def __init__(self, dim, init_value=1.0, trainable=True):
         super().__init__()
         self.scale = nn.Parameter(init_value * torch.ones(dim), requires_grad=trainable)
@@ -71,65 +65,9 @@ class Scale(nn.Module):
     def forward(self, x):
         return x * self.scale
 
-
-"""
-class SepConv(nn.Module):
-
-    def __init__(self, dim, drop=0.):
-        super().__init__()
-
-        self.dwconv = nn.Conv2d(dim, dim, kernel_size=3, padding='same',groups=dim) # depthwise conv
- 
-        self.norm = nn.LayerNorm(dim, eps=1e-6)
-        self.pwconv1 = nn.Linear(dim, 4 * dim) # pointwise/1x1 convs, implemented with linear layers
-        self.act = nn.GELU()
-        self.pwconv2 = nn.Linear(4 * dim, dim)
-        self.drop_path = DropPath(drop) if drop > 0. else nn.Identity()
-
-    def forward(self, x):
-        
-        x = x.permute(0, 3, 1, 2) # (N, C, H, W) -> (N, H, W, C)
-        x = self.dwconv(x)#self.dwconv2(x)+self.dwconv3(x)
-        x = x.permute(0, 2, 3, 1)
-        x = self.norm(x)
-        x = self.pwconv1(x)
-        x = self.act(x)
-        x = self.pwconv2(x)
-        x = self.drop_path(x)
-        return x
-
-
-
-class Downsampling(nn.Module):
-
-    def __init__(self, in_channels, out_channels, 
-        kernel_size, stride=1, padding=0, 
-        pre_norm=None, pre_permute=False):
-        super().__init__()
-        self.pre_norm = pre_norm(in_channels) if pre_norm else nn.Identity()
-        self.pre_permute = pre_permute
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=1, padding=padding)
-        #self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding='same')
-        self.down = nn.MaxPool2d(2,2)
-        self.act= nn.GELU()
-
-    def forward(self, x):
-        x = self.pre_norm(x)
-        if self.pre_permute:
-            # if take [B, H, W, C] as input, permute it to [B, C, H, W]
-            x = x.permute(0, 3, 1, 2)
-        x = self.conv(x)
-        x = self.act(x)
-        x= self.down(x)
-        x = x.permute(0, 2, 3, 1) # [B, C, H, W] -> [B, H, W, C]
-        return x
-
-"""
-    
 class Attention(nn.Module):
     """
-    Vanilla self-attention from Transformer: https://arxiv.org/abs/1706.03762.
-    Modified from timm.
+    Transformer: https://arxiv.org/abs/1706.03762.
     """
     def __init__(self, dim, head_dim=32, num_heads=None, qkv_bias=False,
         attn_drop=0., proj_drop=0., proj_bias=False, **kwargs):
@@ -158,19 +96,19 @@ class Attention(nn.Module):
         
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
         q, k, v = qkv.unbind(0)   # make torchscript happy (cannot use tensor as tuple)
-        
-        out = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p if self.training else 0.0)
-        # [B, num_heads, N, head_dim] -> [B, N, num_heads, head_dim] -> [B, H, W, C]
-        x = out.transpose(1, 2).reshape(B, H, W, self.attention_dim)
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+
+        x = (attn @ v).transpose(1, 2).reshape(B, H, W, self.attention_dim)
         x = self.proj(x)
         x = self.proj_drop(x)
         return x.permute(0, 3, 1, 2)
 
 
 class ConvBlock(nn.Module):
-    """ 
 
-    """
     def __init__(self, dim, drop=0.):
         super().__init__()
 
@@ -185,7 +123,7 @@ class ConvBlock(nn.Module):
 
     def forward(self, x):
         
-        x = self.dwconv(x)#self.dwconv2(x)+self.dwconv3(x)
+        x = self.dwconv(x)
         x = x.permute(0, 2, 3, 1)
         x = self.norm(x)
         x = self.act(x)
@@ -200,9 +138,7 @@ class ConvBlock(nn.Module):
 
     
 class SepConv(nn.Module):
-    """ 
 
-    """
     def __init__(self, dim, drop=0.):
         super().__init__()
 
@@ -231,33 +167,25 @@ class SepConv(nn.Module):
         x = x.permute(0, 3, 1, 2)
         return x
 
-
 class Downsampling(nn.Module):
 
     def __init__(self, in_channels, out_channels, 
-        kernel_size, stride, padding=0, 
+        kernel_size, stride=1, padding=0, 
         pre_norm=None, pre_permute=False):
         super().__init__()
 
         self.pre_norm = pre_norm(in_channels) if pre_norm else nn.Identity()
         self.pre_permute = pre_permute
-
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
-        #self.dilatedconv = nn.Conv2d(in_channels, out_channels, kernel_size=3, dilation=2,padding="same") # 7x7 
-        #self.dilatedconv = nn.Conv2d(in_channels, out_channels, kernel_size=3, dilation=3,padding="same") # 15x15
-        #self.conv = nn.Conv2d(2*out_channels, out_channels, kernel_size=kernel_size, stride=1, padding=padding)
-
-        #self.norm = nn.BatchNorm2d(out_channels)
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=1, padding=padding)
         self.norm = nn.LayerNorm(out_channels)
-        #self.down = nn.MaxPool2d(2,2)
+        self.down = nn.MaxPool2d(2,2)
         self.act= nn.GELU()
 
     def forward(self, x):
         x = self.conv(x)
         x = self.norm(x.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
         x = self.act(x)
-        #x = self.down(x)
-
+        x = self.down(x)
         return x
         
 
@@ -270,110 +198,79 @@ DOWNSAMPLE_LAYERS_FOUR_STAGES = [partial(Downsampling,
             )]*3
 
 class EncoderBlock(nn.Module):
+    """Single encoder block with token mixer + conv block + residual connection."""
 
-    def __init__(self, dim,
-                 token_mixer=nn.Identity,
-                 cblock=ConvBlock,
-                 #norm_layer=nn.LayerNorm,
-                 drop=0., drop_path=0.,
-                 ):
-
+    def __init__(self, dim, token_mixer=nn.Identity, cblock=ConvBlock, drop=0.0, drop_path=0.0):
         super().__init__()
+        self.token_mixer = token_mixer(dim=dim, drop=drop)
+        self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        self.cblock = cblock(dim=dim, drop=drop)
+        self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
-        #self.norm1          = norm_layer(dim)
-        self.token_mixer    = token_mixer(dim=dim, drop=drop)
-        self.drop_path1     = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        #self.layer_scale1   = Scale(dim=dim, init_value=layer_scale_init_value) if layer_scale_init_value else nn.Identity()
-        #self.res_scale1     = Scale(dim=dim, init_value=res_scale_init_value) if res_scale_init_value else nn.Identity()
-        #self.norm2          = norm_layer(dim)
-        #if self.token_mixer.__class__.__name__=='Attention':
-        self.Cblock         = cblock(dim=dim, drop=0)
-
-        self.drop_path2     = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-
-        #self.layer_scale2   = Scale(dim=dim, init_value=layer_scale_init_value) if layer_scale_init_value else nn.Identity()
-        #self.res_scale2     = Scale(dim=dim, init_value=res_scale_init_value) if res_scale_init_value else nn.Identity()
-        
-
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.drop_path1(self.token_mixer(x))
-        #if self.token_mixer.__class__.__name__=='Attention':
-        x = x + self.drop_path2(self.Cblock(x))
-
+        x = x + self.drop_path2(self.cblock(x))
         return x
-    
-    
-class Encoder(nn.Module):
 
-    def __init__(self, in_chans=3,  
-                 depths=[2,2,6,2],
+
+class Encoder(nn.Module):
+    """Encoder with 4 stages, each containing a single EncoderBlock."""
+
+    def __init__(self,
+                 in_chans=3,
                  dims=[64, 128, 256, 512],
                  downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES,
-                 token_mixers=nn.Identity,
-                 #norm_layers=partial(LayerNormWithoutBias, eps=1e-6), # partial(LayerNormGeneral, eps=1e-6, bias=False),
-                 drop_path_rate=0.,
-                 **kwargs,
-                 ):
+                 token_mixers=None,
+                 drop_path_rate=0.0):
         super().__init__()
+        assert token_mixers is not None, "You must provide a list of token_mixers for 4 stages"
+        assert len(token_mixers) == 4, "Expected 4 token mixers (one per stage)"
 
-        num_stage       = len(depths)
-        self.num_stage  = num_stage
-        down_dims       = [in_chans] + dims
-        self.downsample_layers = nn.ModuleList([downsample_layers[i](down_dims[i], down_dims[i+1]) for i in range(num_stage)])
-        
-        dp_rates=[x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]
+        self.num_stages = 4
+        down_dims = [in_chans] + dims
 
-        self.stages     = nn.ModuleList() # each stage consists of multiple metaformer blocks
-        cur             = 0
+        # Build downsampling layers
+        self.downsample_layers = nn.ModuleList([
+            downsample_layers[i](down_dims[i], down_dims[i + 1]) for i in range(self.num_stages)
+        ])
 
-        for i in range(num_stage):
-            stage = nn.Sequential(
-                *[EncoderBlock(  dim=dims[i],
-                                    token_mixer=token_mixers[i],
-                                    #norm_layer=norm_layers[i],
-                                    drop_path=dp_rates[cur + j], ) for j in range(depths[i])]
-            )
-            self.stages.append(stage)
-            cur += depths[i]
+        # Drop path rate schedule (just 4 values for 4 blocks)
+        dp_rates = [x.item() for x in torch.linspace(0, drop_path_rate, self.num_stages)]
+
+        # Each stage = one EncoderBlock
+        self.stages = nn.ModuleList([EncoderBlock(dim=dims[i], token_mixer=token_mixers[i], drop_path=dp_rates[i]) for i in range(self.num_stages)])
 
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.Linear)):
-            trunc_normal_(m.weight, std=.02)
+            trunc_normal_(m.weight, std=0.02)
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
 
-    def get_features(self, x):
-        out=[]
-        for i in range(self.num_stage):
+    def forward(self, x: torch.Tensor) -> list:
+        """Forward pass through encoder. Returns list of feature maps from each stage."""
+        features = []
+        for i in range(self.num_stages):
             x = self.downsample_layers[i](x)
             x = self.stages[i](x)
-            out.append(x)
-        return out
-
-    def forward(self, x):
-        features = self.get_features(x)
+            features.append(x)
         return features
 
 
 def encoder_function():
-
-    model = Encoder(
-        depths=[1,1,1,1],
+    """Factory method to create the encoder with fixed 4 stages."""
+    return Encoder(
         dims=[64, 128, 256, 512],
         token_mixers=[SepConv, SepConv, Attention, Attention],
-        )
-
-    return model
-
+        downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES,
+    )
 
 
-if __name__ == '__main__':
-    # Loading data
-
+if __name__ == "__main__":
     model = encoder_function()
-    #model2 = VİT_NN(images_dim=128,input_channel=3, token_dim=768,  n_heads=4, mlp_layer_size=1024, t_blocks=12, patch_size=8,classification=False)
-
-    #print(model(torch.rand(2, 3, 224, 224))[0].shape)
-    print(model(torch.rand(2, 3, 256, 256))[0].shape)
+    x = torch.rand(2, 3, 256, 256)
+    features = model(x)
+    print("Feature shapes per stage:")
+    for i, feat in enumerate(features):
+        print(f" Stage {i+1}: {tuple(feat.shape)}")
