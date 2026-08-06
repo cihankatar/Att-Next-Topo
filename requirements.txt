@@ -9,7 +9,8 @@ scikit-learn
 Pillow
 opencv-python
 gudhi
-torch_topological
+POT
+# torch_topological is bundled in this repository.
 scipy
 pytest
 # Note: Install torch with the correct CUDA support per https://pytorch.org/get-started/locally
